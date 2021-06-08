@@ -11,6 +11,7 @@ import logging
 import tarfile
 import zipfile
 
+
 from io import BytesIO
 
 
@@ -60,14 +61,12 @@ def get_geckodriver_url(version):
     :return: Download URL for geckodriver
     """
     platform, architecture = get_platform_architecture()
-
     if platform == 'win':
-        compression = 'zip'
+        return f'https://github.com/mozilla/geckodriver/releases/download/{version}' \
+               f'/geckodriver-{version}-{platform}{architecture}.zip'
     else:
-        compression = 'tar.gz'
-
-    return f'https://github.com/mozilla/geckodriver/releases/download/{version}' \
-           f'/geckodriver-{version}-{platform}{architecture}.{compression}'
+        return f'https://github.com/mozilla/geckodriver/releases/download/{version}' \
+               f'/geckodriver-{version}-{platform}{architecture}.tar.gz'
 
 
 def find_binary_in_path(filename):
@@ -178,31 +177,35 @@ def download_geckodriver(cwd=False):
         if not os.path.isdir(geckodriver_dir):
             os.mkdir(geckodriver_dir)
         url = get_geckodriver_url(geckodriver_version)
+
         try:
             response = urllib.request.urlopen(url)
             if response.getcode() != 200:
                 raise urllib.error.URLError('Not Found')
         except urllib.error.URLError:
-            raise RuntimeError(f'Failed to download geckodriver archive: {url}')
-        archive = BytesIO(response.read())
-
-        uncompress(archive, geckodriver_dir)
+            raise RuntimeError(
+                f'Failed to download chromedriver archive: {url}')
+        platform, architecture = get_platform_architecture()
+        if platform == 'win':
+            archive = BytesIO(response.read())
+            with zipfile.ZipFile(archive) as zip_file:
+                zip_file.extract(geckodriver_filename, geckodriver_dir)
+        else:
+            try:
+                response = urllib.request.urlopen(url)
+                if response.getcode() != 200:
+                    raise urllib.error.URLError('Not Found')
+            except urllib.error.URLError:
+                raise RuntimeError(f'Failed to download geckodriver archive: {url}')
+            archive = BytesIO(response.read())
+            tar = tarfile.open(fileobj=archive, mode='r:gz')
+            tar.extractall(geckodriver_dir)
+            tar.close()
     else:
         logging.debug('geckodriver is already installed.')
     if not os.access(geckodriver_filepath, os.X_OK):
         os.chmod(geckodriver_filepath, 0o744)
     return geckodriver_filepath
-
-def uncompress(file, directory):
-    platform, _ = get_platform_architecture()
-
-    if platform == 'win':
-        with zipfile.ZipFile(file, 'r') as zip_ref:
-            zip_ref.extractall(directory)
-    else:
-        tar = tarfile.open(fileobj=file, mode='r:gz')
-        tar.extractall(directory)
-        tar.close()
 
 
 if __name__ == '__main__':
